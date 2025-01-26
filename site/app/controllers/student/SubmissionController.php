@@ -2167,4 +2167,64 @@ class SubmissionController extends AbstractController {
             $this->core->buildCourseUrl(['gradeable', $gradeable_id])
         );
     }
+
+    /**
+     * @param string|null $user_id
+     * @param string|null $gradeable_id
+     * @param string|null $course
+     * @param string|null $semester
+     * @return MultiResponse
+     */
+    #[Route("/api/test/upload/file", methods: ["POST"])]
+    public function testUploadFile() {
+
+        // check parameters
+        if (!isset($_POST['user_id']) || !isset($_POST['gradeable_id'])) {
+            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse('missing user_id or gradeable_id'));
+        }
+
+        if (!isset($_POST['course']) || !isset($_POST['semester'])) {
+            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse('missing semester or course'));
+        }
+
+        // request variables
+        $user_id = $_POST['user_id'];
+        $gradeable_id = $_POST['gradeable_id'];
+        $course = $_POST['course'];
+        $semester = $_POST['semester'];
+
+        // configure core
+        $this->core->loadCourseConfig($semester, $course);
+        $this->core->loadCourseDatabase();
+        
+        // setup directories
+        $who_id = $user_id;
+
+        $gradeable = $this->tryGetElectronicGradeable($gradeable_id);
+        $gradeable_path = FileUtils::joinPaths(
+            $this->core->getConfig()->getCoursePath(),
+            "submissions",
+            $gradeable->getId()
+        );
+        if (!FileUtils::createDir($gradeable_path)) {
+            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse('failed to make a folder for this assignment'));
+        }
+        
+        $user_path = FileUtils::joinPaths($gradeable_path, $who_id);
+        $this->upload_details['user_path'] = $user_path;
+        if (!FileUtils::createDir($user_path)) {
+            return $this->uploadResult("failed to make folder for this assignment for the user", false);
+        }
+
+        $graded_gradeable = $this->core->getQueries()->getGradedGradeable($gradeable, $user_id, null);
+        $highest_version = $graded_gradeable->getAutoGradedGradeable()->getHighestVersion();
+        $new_version = $highest_version + 1;
+
+        $version_path = FileUtils::joinPaths($user_path, $new_version);
+        if (!FileUtils::createDir($version_path)) {
+            return $this->uploadResult("failed to make folder for the current version", false);
+        }
+
+        return MultiResponse::JsonOnlyResponse(JsonResponse::getSuccessResponse(['success',$version_path]));
+    }
 }
