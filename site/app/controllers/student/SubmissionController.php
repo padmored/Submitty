@@ -1297,7 +1297,7 @@ class SubmissionController extends AbstractController {
                 }
             }
         }
-
+        
         $current_time = $this->core->getDateTimeNow()->format("Y-m-d H:i:sO");
         $current_time_string_tz = $current_time . " " . $this->core->getConfig()->getTimezone()->getName();
 
@@ -2213,7 +2213,7 @@ class SubmissionController extends AbstractController {
         $user_path = FileUtils::joinPaths($gradeable_path, $who_id);
         $this->upload_details['user_path'] = $user_path;
         if (!FileUtils::createDir($user_path)) {
-            return $this->uploadResult("failed to make folder for this assignment for the user", false);
+            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse('failed to make a folder for the user'));
         }
 
         $graded_gradeable = $this->core->getQueries()->getGradedGradeable($gradeable, $user_id, null);
@@ -2222,9 +2222,180 @@ class SubmissionController extends AbstractController {
 
         $version_path = FileUtils::joinPaths($user_path, $new_version);
         if (!FileUtils::createDir($version_path)) {
-            return $this->uploadResult("failed to make folder for the current version", false);
+            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse('failed to make a folder for current version'));
         }
 
-        return MultiResponse::JsonOnlyResponse(JsonResponse::getSuccessResponse(['success',$version_path]));
+        // <temp>
+        $num_parts = $gradeable->getAutogradingConfig()->getNumParts();
+
+        $this->upload_details['version_path'] = $version_path;
+        $this->upload_details['version'] = $new_version;
+
+        $part_path = [];
+        $part_path[1] = $version_path;
+
+        $current_time = $this->core->getDateTimeNow()->format("Y-m-d H:i:sO");
+        $current_time_string_tz = $current_time . " " . $this->core->getConfig()->getTimezone()->getName();
+
+        $max_size = $gradeable->getAutogradingConfig()->getMaxSubmissionSize();
+
+        $uploaded_files = [];
+        for ($i = 1; $i <= $num_parts; $i++) {
+            if (isset($_FILES["files{$i}"])) {
+                $uploaded_files[$i] = $_FILES["files{$i}"];
+            }
+        }
+
+        if (empty($uploaded_files)) {
+            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse('no files to be submitted'));
+        }
+
+        $file_size = 0;
+        for ($i = 1; $i <= $num_parts; $i++) {
+            if (isset($uploaded_files[$i])) {
+                $uploaded_files[$i]["is_zip"] = [];
+                for ($j = 0; $j < $count[$i]; $j++) {
+                    if (mime_content_type($uploaded_files[$i]["tmp_name"][$j]) === "application/zip" && strtolower(pathinfo($uploaded_files[$i]["name"][$j], PATHINFO_EXTENSION)) === "zip") {
+                        if (FileUtils::checkFileInZipName($uploaded_files[$i]["tmp_name"][$j]) === false) {
+                            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse(['Error: You may not use quotes, backslashes or angle brackets in your filename for files', $uploaded_files[$i]["name"][$j]]));
+                        }
+                        $uploaded_files[$i]["is_zip"][$j] = true;
+                        $file_size += FileUtils::getZipSize($uploaded_files[$i]["tmp_name"][$j]);
+                    }
+                    else {
+                        if (FileUtils::isValidFileName($uploaded_files[$i]["name"][$j]) === false) {
+                            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse(['Error: You may not use quotes, backslashes or angle brackets in your filename for files', $uploaded_files[$i]["name"][$j]]));
+                        }
+                        $uploaded_files[$i]["is_zip"][$j] = false;
+                        $file_size += $uploaded_files[$i]["size"][$j];
+                    }
+                }
+            }
+        }
+
+        if ($file_size > $max_size) {
+            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse('file uploaded too large'));
+        }
+
+        for ($i = 1; $i <= $num_parts; $i++) {
+            if (isset($uploaded_files[$i])) {
+                for ($j = 0; $j < $count[$i]; $j++) {
+                    if ($uploaded_files[$i]["is_zip"][$j] === true) {
+                        $zip = new \ZipArchive();
+                        $res = $zip->open($uploaded_files[$i]["tmp_name"][$j]);
+                        if ($res === true) {
+                            $zip->extractTo($part_path[$i]);
+                            $zip->close();
+                        }
+                        else {
+                            // If the zip is an invalid zip (say we remove the last character from the zip file)
+                            // then trying to get the status code will throw an exception and not give us a string
+                            // so we have that string hardcoded, otherwise we can just get the status string as
+                            // normal.
+                            $error_message = ($res == 19) ? "Invalid or uninitialized Zip object" : $zip->getStatusString();
+                            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse(['could not properly unpack zip',$error_message]));
+                        }
+                    }
+                    else {
+                        if (is_uploaded_file($uploaded_files[$i]["tmp_name"][$j])) {
+                            $dst = FileUtils::joinPaths($part_path[$i], $uploaded_files[$i]["name"][$j]);
+                            if (!@copy($uploaded_files[$i]["tmp_name"][$j], $dst)) {
+                                return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse(['failed to copy uploaded file to submission',$uploaded_files[$i]["name"][$j]]));
+                            }
+                        }
+                        else {
+                            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse(['tmp file was not properly uploaded',$uploaded_files[$i]["name"][$j]]));
+                        }
+                    }
+                    // Is this really an error we should fail on?
+                    if (!@unlink($uploaded_files[$i]["tmp_name"][$j])) {
+                        return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse(['failed to delete the uploaded file',$uploaded_files[$i]["name"][$j]]));
+                    }
+                }
+            }
+        }
+
+        $empty_pages = true;
+        $access = $this->core->getQueries()->getGradeableAccessUser($gradeable->getId(), $user_id);
+
+        FileUtils::writeJsonFile(
+            FileUtils::joinPaths($version_path, '.user_assignment_access.json'),
+            array_map(function ($row) {
+                // need to do this as postgres may return timezone as [+-]HH and python needs [+-]HHMM
+                $row['timestamp'] = DateUtils::parseDateTime(
+                    $row['timestamp'],
+                    $this->core->getConfig()->getTimezone()
+                )->format('Y-m-d H:i:sO');
+                return $row;
+            }, $access)
+        );
+
+        $settings_file = FileUtils::joinPaths($user_path, "user_assignment_settings.json");
+        if (!file_exists($settings_file)) {
+            $json = [
+                "active_version" => $new_version,
+                "history" => [
+                    [
+                        "version" => $new_version,
+                        "time" => $current_time_string_tz,
+                        "who" => $original_user_id,
+                        "type" => "upload"
+                    ]
+                ]
+            ];
+        }
+        else {
+            $json = FileUtils::readJsonFile($settings_file);
+            if ($json === false) {
+                return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse('failed to open settings file'));
+            }
+            $json["active_version"] = $new_version;
+            $json["history"][] = ["version" => $new_version, "time" => $current_time_string_tz, "who" => $original_user_id, "type" => "upload"];
+        }
+
+        // TODO: If any of these fail, should we "cancel" (delete) the entire submission attempt or just leave it?
+        if (!@file_put_contents($settings_file, FileUtils::encodeJson($json))) {
+            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse('failed to write to settings file'));
+        }
+
+        $this->upload_details['assignment_settings'] = true;
+
+        if (!@file_put_contents(FileUtils::joinPaths($version_path, ".submit.timestamp"), $current_time_string_tz . "\n")) {
+            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse('failed to save timestamp for submission'));
+        }
+
+
+        $queue_file_helper = [$this->core->getConfig()->getTerm(), $this->core->getConfig()->getCourse(),
+            $gradeable->getId(), $who_id, $new_version];
+        $queue_file_helper = implode("__", $queue_file_helper);
+        $queue_file = FileUtils::joinPaths(
+            $this->core->getConfig()->getSubmittyPath(),
+            "to_be_graded_queue",
+            $queue_file_helper
+        );
+
+        // create json file...
+        $queue_data = [
+            "term" => $this->core->getConfig()->getTerm(),
+            "course" => $this->core->getConfig()->getCourse(),
+            "gradeable" => $gradeable->getId(),
+            "required_capabilities" => $gradeable->getAutogradingConfig()->getRequiredCapabilities(),
+            "max_possible_grading_time" => $gradeable->getAutogradingConfig()->getMaxPossibleGradingTime(),
+            "queue_time" => $current_time,
+            "user" => $user_id,
+            "team" => "",
+            "who" => $who_id,
+            "is_team" => false,
+            "version" => $new_version,
+            "vcs_checkout" => false
+        ];
+
+        // Then create the file that will trigger autograding
+        if (@file_put_contents($queue_file, FileUtils::encodeJson($queue_data), LOCK_EX) === false) {
+            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse('failed to create file for grading queue'));
+        }
+
+        $this->core->getQueries()->insertVersionDetails($gradeable->getId(), $user_id, null, $new_version, $current_time);
+        return MultiResponse::JsonOnlyResponse(JsonResponse::getSuccessResponse(['success!',$new_version, $gradeable->getTitle()]));
     }
 }
