@@ -2241,8 +2241,8 @@ class SubmissionController extends AbstractController {
 
         $uploaded_files = [];
         for ($i = 1; $i <= $num_parts; $i++) {
-            if (isset($_FILES["files{$i}"])) {
-                $uploaded_files[$i] = $_FILES["files{$i}"];
+            if (isset($_FILES["file"])) {
+                $uploaded_files[$i] = $_FILES["file"];
             }
         }
 
@@ -2254,21 +2254,19 @@ class SubmissionController extends AbstractController {
         for ($i = 1; $i <= $num_parts; $i++) {
             if (isset($uploaded_files[$i])) {
                 $uploaded_files[$i]["is_zip"] = [];
-                for ($j = 0; $j < $count[$i]; $j++) {
-                    if (mime_content_type($uploaded_files[$i]["tmp_name"][$j]) === "application/zip" && strtolower(pathinfo($uploaded_files[$i]["name"][$j], PATHINFO_EXTENSION)) === "zip") {
-                        if (FileUtils::checkFileInZipName($uploaded_files[$i]["tmp_name"][$j]) === false) {
-                            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse(['Error: You may not use quotes, backslashes or angle brackets in your filename for files', $uploaded_files[$i]["name"][$j]]));
-                        }
-                        $uploaded_files[$i]["is_zip"][$j] = true;
-                        $file_size += FileUtils::getZipSize($uploaded_files[$i]["tmp_name"][$j]);
+                if (mime_content_type($uploaded_files[$i]["tmp_name"]) === "application/zip" && strtolower(pathinfo($uploaded_files[$i]["name"], PATHINFO_EXTENSION)) === "zip") {
+                    if (FileUtils::checkFileInZipName($uploaded_files[$i]["tmp_name"]) === false) {
+                        return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse(['Error: You may not use quotes, backslashes or angle brackets in your filename for files', $uploaded_files[$i]["name"]]));
                     }
-                    else {
-                        if (FileUtils::isValidFileName($uploaded_files[$i]["name"][$j]) === false) {
-                            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse(['Error: You may not use quotes, backslashes or angle brackets in your filename for files', $uploaded_files[$i]["name"][$j]]));
-                        }
-                        $uploaded_files[$i]["is_zip"][$j] = false;
-                        $file_size += $uploaded_files[$i]["size"][$j];
+                    $uploaded_files[$i]["is_zip"][$j] = true;
+                    $file_size += FileUtils::getZipSize($uploaded_files[$i]["tmp_name"]);
+                }
+                else {
+                    if (FileUtils::isValidFileName($uploaded_files[$i]["name"]) === false) {
+                        return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse(['Error: You may not use quotes, backslashes or angle brackets in your filename for files', $uploaded_files[$i]["name"]]));
                     }
+                    $uploaded_files[$i]["is_zip"] = false;
+                    $file_size += $uploaded_files[$i]["size"];
                 }
             }
         }
@@ -2279,38 +2277,36 @@ class SubmissionController extends AbstractController {
 
         for ($i = 1; $i <= $num_parts; $i++) {
             if (isset($uploaded_files[$i])) {
-                for ($j = 0; $j < $count[$i]; $j++) {
-                    if ($uploaded_files[$i]["is_zip"][$j] === true) {
-                        $zip = new \ZipArchive();
-                        $res = $zip->open($uploaded_files[$i]["tmp_name"][$j]);
-                        if ($res === true) {
-                            $zip->extractTo($part_path[$i]);
-                            $zip->close();
-                        }
-                        else {
-                            // If the zip is an invalid zip (say we remove the last character from the zip file)
-                            // then trying to get the status code will throw an exception and not give us a string
-                            // so we have that string hardcoded, otherwise we can just get the status string as
-                            // normal.
-                            $error_message = ($res == 19) ? "Invalid or uninitialized Zip object" : $zip->getStatusString();
-                            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse(['could not properly unpack zip',$error_message]));
+                if ($uploaded_files[$i]["is_zip"] === true) {
+                    $zip = new \ZipArchive();
+                    $res = $zip->open($uploaded_files[$i]["tmp_name"]);
+                    if ($res === true) {
+                        $zip->extractTo($part_path[$i]);
+                        $zip->close();
+                    }
+                    else {
+                        // If the zip is an invalid zip (say we remove the last character from the zip file)
+                        // then trying to get the status code will throw an exception and not give us a string
+                        // so we have that string hardcoded, otherwise we can just get the status string as
+                        // normal.
+                        $error_message = ($res == 19) ? "Invalid or uninitialized Zip object" : $zip->getStatusString();
+                        return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse(['could not properly unpack zip',$error_message]));
+                    }
+                }
+                else {
+                    if (is_uploaded_file($uploaded_files[$i]["tmp_name"])) {
+                        $dst = FileUtils::joinPaths($part_path[$i], $uploaded_files[$i]["name"]);
+                        if (!@copy($uploaded_files[$i]["tmp_name"], $dst)) {
+                            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse(['failed to copy uploaded file to submission',$uploaded_files[$i]["name"]]));
                         }
                     }
                     else {
-                        if (is_uploaded_file($uploaded_files[$i]["tmp_name"][$j])) {
-                            $dst = FileUtils::joinPaths($part_path[$i], $uploaded_files[$i]["name"][$j]);
-                            if (!@copy($uploaded_files[$i]["tmp_name"][$j], $dst)) {
-                                return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse(['failed to copy uploaded file to submission',$uploaded_files[$i]["name"][$j]]));
-                            }
-                        }
-                        else {
-                            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse(['tmp file was not properly uploaded',$uploaded_files[$i]["name"][$j]]));
-                        }
+                        return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse(['tmp file was not properly uploaded',$uploaded_files[$i]["name"][$j], $_FILES['file']['error']]));
                     }
-                    // Is this really an error we should fail on?
-                    if (!@unlink($uploaded_files[$i]["tmp_name"][$j])) {
-                        return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse(['failed to delete the uploaded file',$uploaded_files[$i]["name"][$j]]));
-                    }
+                }
+                // Is this really an error we should fail on?
+                if (!@unlink($uploaded_files[$i]["tmp_name"])) {
+                    return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse(['failed to delete the uploaded file',$uploaded_files[$i]["name"]]));
                 }
             }
         }
@@ -2396,6 +2392,6 @@ class SubmissionController extends AbstractController {
         }
 
         $this->core->getQueries()->insertVersionDetails($gradeable->getId(), $user_id, null, $new_version, $current_time);
-        return MultiResponse::JsonOnlyResponse(JsonResponse::getSuccessResponse(['success!',$new_version, $gradeable->getTitle()]));
+        return MultiResponse::JsonOnlyResponse(JsonResponse::getSuccessResponse(['success!',$_FILES]));
     }
 }
