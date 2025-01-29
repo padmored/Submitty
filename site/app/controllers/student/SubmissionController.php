@@ -2242,6 +2242,9 @@ class SubmissionController extends AbstractController {
         $uploaded_files = [];
         for ($i = 1; $i <= $num_parts; $i++) {
             if (isset($_FILES["file"])) {
+                if ($_FILES["file"]["error"] == 4) { // upload error no file 
+                     return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse('no files to be submitted'));
+                }
                 $uploaded_files[$i] = $_FILES["file"];
             }
         }
@@ -2334,7 +2337,7 @@ class SubmissionController extends AbstractController {
                     [
                         "version" => $new_version,
                         "time" => $current_time_string_tz,
-                        "who" => $original_user_id,
+                        "who" => $who_id,
                         "type" => "upload"
                     ]
                 ]
@@ -2346,7 +2349,7 @@ class SubmissionController extends AbstractController {
                 return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse('failed to open settings file'));
             }
             $json["active_version"] = $new_version;
-            $json["history"][] = ["version" => $new_version, "time" => $current_time_string_tz, "who" => $original_user_id, "type" => "upload"];
+            $json["history"][] = ["version" => $new_version, "time" => $current_time_string_tz, "who" => $who_id, "type" => "upload"];
         }
 
         // TODO: If any of these fail, should we "cancel" (delete) the entire submission attempt or just leave it?
@@ -2392,6 +2395,6 @@ class SubmissionController extends AbstractController {
         }
 
         $this->core->getQueries()->insertVersionDetails($gradeable->getId(), $user_id, null, $new_version, $current_time);
-        return MultiResponse::JsonOnlyResponse(JsonResponse::getSuccessResponse(['success!',$_FILES]));
+        return MultiResponse::JsonOnlyResponse(JsonResponse::getSuccessResponse(['file uploaded', $new_version]));
     }
 }
