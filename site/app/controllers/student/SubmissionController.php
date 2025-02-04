@@ -25,6 +25,11 @@ use app\models\notebook\SubmissionCodeBox;
 use app\models\notebook\SubmissionMultipleChoice;
 use app\models\gradeable\AutoGradedTestcase;
 
+use app\models\gradeable\GradeableList;
+use app\exceptions\DatabaseException;
+use app\libraries\Core;
+use app\libraries\ExceptionHandler;
+
 class SubmissionController extends AbstractController {
     private $upload_details = [
         'version' => -1,
@@ -2396,5 +2401,48 @@ class SubmissionController extends AbstractController {
 
         $this->core->getQueries()->insertVersionDetails($gradeable->getId(), $user_id, null, $new_version, $current_time);
         return MultiResponse::JsonOnlyResponse(JsonResponse::getSuccessResponse(['file uploaded', $new_version]));
+    }
+
+
+    /**
+     * @param string|null $user_id
+     * @param string|null $course
+     * @param string|null $semester
+     * @return MultiResponse
+     */
+    #[Route("/api/test/get/gradeables")]
+    public function testGetGradeables() {
+        // check parameters
+        if (!isset($_GET['user_id'])) {
+            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse('missing user_id'));
+        }
+
+        if (!isset($_GET['course']) || !isset($_GET['semester'])) {
+            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse('missing semester or course'));
+        }
+
+        // request variables
+        $user_id = $_GET['user_id'];
+        $course = $_GET['course'];
+        $semester = $_GET['semester'];
+
+        // configure core
+        $this->core->loadCourseConfig($semester, $course);
+        $this->core->loadCourseDatabase();
+
+        try {
+            $gradeables_list = new GradeableList($this->core);
+        }
+        catch (DatabaseException $e) {
+            ExceptionHandler::handleException($e);
+
+            $error_messages = ['A broken gradeable was detected when collecting gradeable information from the database.  Contact the system administrator for assistance.'];
+            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse(['Error fetching gradeables', $error_message]));
+        }
+
+        $filtered_gradeables = $gradeables_list->getSubmittableElectronicGradeables();
+        $gradeable_keys = array_keys($filtered_gradeables);
+
+        return MultiResponse::JsonOnlyResponse(JsonResponse::getSuccessResponse(['gradeables', $gradeable_keys]));
     }
 }
