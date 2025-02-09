@@ -2441,8 +2441,14 @@ class SubmissionController extends AbstractController {
         }
 
         $filtered_gradeables = $gradeables_list->getSubmittableElectronicGradeables();
-        $gradeable_keys = array_keys($filtered_gradeables);
 
-        return MultiResponse::JsonOnlyResponse(JsonResponse::getSuccessResponse(['gradeables', $gradeable_keys]));
+        $gradeables_info = array_map(function($gradeable) {
+            return [
+                'id' => $gradeable->getId(),
+                'title' => $gradeable->getTitle()
+            ];
+        }, $filtered_gradeables);
+    
+        return MultiResponse::JsonOnlyResponse(JsonResponse::getSuccessResponse(['gradeables' => $gradeables_info]));
     }
 }
