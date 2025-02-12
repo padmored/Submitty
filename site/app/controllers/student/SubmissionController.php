@@ -2248,14 +2248,14 @@ class SubmissionController extends AbstractController {
         for ($i = 1; $i <= $num_parts; $i++) {
             if (isset($_FILES["file"])) {
                 if ($_FILES["file"]["error"] == 4) { // upload error no file 
-                     return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse('no files to be submitted'));
+                    return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse('no files to be submitted'));
                 }
                 $uploaded_files[$i] = $_FILES["file"];
             }
         }
 
         if (empty($uploaded_files)) {
-            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse('no files to be submitted'));
+            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse('no files to be submitted (empty)'));
         }
 
         $file_size = 0;
