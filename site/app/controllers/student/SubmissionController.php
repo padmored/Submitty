@@ -2451,4 +2451,47 @@ class SubmissionController extends AbstractController {
     
         return MultiResponse::JsonOnlyResponse(JsonResponse::getSuccessResponse(['gradeables' => $gradeables_info]));
     }
+
+    /**
+     * @param string|null $user_id
+     * @param string|null $gradeable_id
+     * @param string|null $course
+     * @param string|null $semester
+     * @return MultiResponse
+     */
+    #[Route("/api/test/get/gradeable/version")]
+    public function testGetGradeableVersion() {
+        // check parameters
+        if (!isset($_GET['user_id'])) {
+            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse('missing user_id'));
+        }
+
+        if (!isset($_GET['course']) || !isset($_GET['semester'])) {
+            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse('missing semester or course'));
+        }
+
+        // request variables
+        $user_id = $_GET['user_id'];
+        $gradeable_id = $_GET['gradeable_id'];
+        $course = $_GET['course'];
+        $semester = $_GET['semester'];
+
+        // configure core
+        $this->core->loadCourseConfig($semester, $course);
+        $this->core->loadCourseDatabase();
+
+        $gradeable = $this->tryGetElectronicGradeable($gradeable_id);
+        if ($gradeable == null) {
+            return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse('invalid gradeable_id'));
+        }
+        $gradeable_path = FileUtils::joinPaths(
+            $this->core->getConfig()->getCoursePath(),
+            "submissions",
+            $gradeable->getId()
+        );
+
+        $graded_gradeable = $this->core->getQueries()->getGradedGradeable($gradeable, $user_id, null);
+        $highest_version = $graded_gradeable->getAutoGradedGradeable()->getHighestVersion();
+        return MultiResponse::JsonOnlyResponse(JsonResponse::getSuccessResponse(['gradeable version', $highest_version]));
+    }
 }

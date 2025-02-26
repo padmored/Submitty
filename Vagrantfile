@@ -154,7 +154,7 @@ Vagrant.configure(2) do |config|
 
   vm_name = 'ubuntu-22.04'
   config.vm.define vm_name, primary: true do |ubuntu|
-    ubuntu.vm.network 'forwarded_port', guest: 1511, host: ENV.fetch('VM_PORT_SITE', 1511)
+    #ubuntu.vm.network 'forwarded_port', guest: 1511, host: ENV.fetch('VM_PORT_SITE', 1511)
     ubuntu.vm.network 'forwarded_port', guest: 8443, host: ENV.fetch('VM_PORT_WS',   8443)
     ubuntu.vm.network 'forwarded_port', guest: 5432, host: ENV.fetch('VM_PORT_DB',  16442)
     ubuntu.vm.network 'forwarded_port', guest: 7000, host: ENV.fetch('VM_PORT_SAML', 7001)
@@ -272,6 +272,9 @@ Vagrant.configure(2) do |config|
 
   config.vm.provision :shell, :inline => " sudo timedatectl set-timezone America/New_York", run: "once"
 
+  # padmored
+  config.vm.network "public_network"
+  config.vm.network "forwarded_port", guest: 1511, host: 1511
 
   # to use the command below, first install the vagrant plugin:
   #
@@ -286,3 +289,5 @@ Vagrant.configure(2) do |config|
     config.ssh.password = 'vagrant'
   end 
 end
+
+# ? sudo ufw allow 1511/tcp
