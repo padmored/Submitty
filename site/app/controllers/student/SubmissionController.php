@@ -2459,8 +2459,8 @@ class SubmissionController extends AbstractController {
      * @param string|null $semester
      * @return MultiResponse
      */
-    #[Route("/api/test/get/gradeable/version")]
-    public function testGetGradeableVersion() {
+    #[Route("/api/test/get/gradeable/data")]
+    public function testGetGradeableData() {
         // check parameters
         if (!isset($_GET['user_id'])) {
             return MultiResponse::JsonOnlyResponse(JsonResponse::getFailResponse('missing user_id'));
@@ -2489,9 +2489,10 @@ class SubmissionController extends AbstractController {
             "submissions",
             $gradeable->getId()
         );
+        $due_date = $gradeable->getSubmissionDueDate();
 
         $graded_gradeable = $this->core->getQueries()->getGradedGradeable($gradeable, $user_id, null);
         $highest_version = $graded_gradeable->getAutoGradedGradeable()->getHighestVersion();
-        return MultiResponse::JsonOnlyResponse(JsonResponse::getSuccessResponse(['gradeable version', $highest_version]));
+        return MultiResponse::JsonOnlyResponse(JsonResponse::getSuccessResponse(['version' => $highest_version,'due_date' => $due_date]));
     }
 }
