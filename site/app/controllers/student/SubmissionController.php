@@ -2479,6 +2479,7 @@ class SubmissionController extends AbstractController {
         // configure core
         $this->core->loadCourseConfig($semester, $course);
         $this->core->loadCourseDatabase();
+        $this->core->loadGradingQueue();
 
         $gradeable = $this->tryGetElectronicGradeable($gradeable_id);
         if ($gradeable == null) {
@@ -2493,6 +2494,13 @@ class SubmissionController extends AbstractController {
 
         $graded_gradeable = $this->core->getQueries()->getGradedGradeable($gradeable, $user_id, null);
         $highest_version = $graded_gradeable->getAutoGradedGradeable()->getHighestVersion();
-        return MultiResponse::JsonOnlyResponse(JsonResponse::getSuccessResponse(['version' => $highest_version,'due_date' => $due_date]));
+        $is_grading = $graded_gradeable->getAutoGradedGradeable()->isGrading();
+        $is_queued = $graded_gradeable->getAutoGradedGradeable()->isQueued();
+        $total_points = $graded_gradeable->getAutoGradedGradeable()->getTotalPoints();
+        $total_percent = 0;
+        if($total_points > 0) {
+            $total_percent = $graded_gradeable->getAutoGradedGradeable()->getTotalPercent();
+        }
+        return MultiResponse::JsonOnlyResponse(JsonResponse::getSuccessResponse(['version' => $highest_version,'due_date' => $due_date, 'is_grading' => $is_grading, 'is_queued' => $is_queued, 'total_points' => $total_points, 'total_percent' => $total_percent]));
     }
 }
