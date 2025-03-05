@@ -2498,9 +2498,13 @@ class SubmissionController extends AbstractController {
         $is_queued = $graded_gradeable->getAutoGradedGradeable()->isQueued();
         $total_points = $graded_gradeable->getAutoGradedGradeable()->getTotalPoints();
         $total_percent = 0;
+        $queue_position = -1;
         if($total_points > 0) {
             $total_percent = $graded_gradeable->getAutoGradedGradeable()->getTotalPercent();
         }
-        return MultiResponse::JsonOnlyResponse(JsonResponse::getSuccessResponse(['version' => $highest_version,'due_date' => $due_date, 'is_grading' => $is_grading, 'is_queued' => $is_queued, 'total_points' => $total_points, 'total_percent' => $total_percent]));
+        if($is_queued) {
+            $queue_position = $graded_gradeable->getAutoGradedGradeable()->getQueuePosition();
+        }
+        return MultiResponse::JsonOnlyResponse(JsonResponse::getSuccessResponse(['version' => $highest_version,'due_date' => $due_date, 'is_grading' => $is_grading, 'is_queued' => $is_queued, 'total_points' => $total_points, 'total_percent' => $total_percent, 'queue_position' => $queue_position]));
     }
 }
