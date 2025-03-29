@@ -2496,7 +2496,12 @@ class SubmissionController extends AbstractController {
         $highest_version = $graded_gradeable->getAutoGradedGradeable()->getHighestVersion();
         $is_grading = $graded_gradeable->getAutoGradedGradeable()->isGrading();
         $is_queued = $graded_gradeable->getAutoGradedGradeable()->isQueued();
-        $total_points = $graded_gradeable->getAutoGradedGradeable()->getTotalPoints();
+        if($highest_version > 0) {
+            $total_points = $graded_gradeable->getAutoGradedGradeable()->getTotalPoints();
+        }
+        else {
+            $total_points = -1;
+        }
         $total_percent = 0;
         $queue_position = -1;
         if($total_points > 0) {
